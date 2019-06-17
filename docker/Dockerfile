@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 CMD ["jupyter", "notebook"]
-RUN echo "deb http://nl.archive.ubuntu.com/ubuntu/ bionic multiverse" >> /etc/apt/sources.list \
-    && echo "deb http://nl.archive.ubuntu.com/ubuntu/ bionic-updates multiverse" >> /etc/apt/sources.list \
+RUN echo "deb http://nl.archive.ubuntu.com/ubuntu/ bionic main restricted universe multiverse" > /etc/apt/sources.list \
+    && echo "deb http://nl.archive.ubuntu.com/ubuntu/ bionic-updates main restricted universe multiverse" >> /etc/apt/sources.list \
     && apt-get update && apt-get install -y apt-utils debconf-utils && apt-get -y upgrade && apt-get clean
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -12,7 +12,7 @@ RUN apt-get install -y python2.7 python-dev python-numpy python-scipy python-pip
                        wcslib-dev libboost-program-options-dev libboost-filesystem-dev \
                        libboost-system-dev libboost-python-dev libboost-thread-dev libboost-regex-dev \
                        libqt4-dev pgplot5 openjdk-8-jre libdbus-1-dev libdbus-c++-dev libxml2-dev libxslt1-dev \
-                       libqwt-dev libsqlite3-dev liblog4cxx-dev doxygen swig libgsl-dev \
+                       libqwt-dev libsqlite3-dev liblog4cxx-dev doxygen swig libgsl-dev curl\
     && apt-get clean
 
 # Libgsl from 16.04 is too old for CASA, get the version from 18.04
@@ -38,22 +38,25 @@ RUN apt-get install -y gfortran build-essential python-numpy-dev \
     && jupyter nbextension enable --py widgetsnbextension --sys-prefix
 
 # Dependencies - RPFITS
-RUN wget ftp://ftp.atnf.csiro.au/pub/software/rpfits/rpfits-2.25.tar.gz \
-    && tar zxvf rpfits-2.25.tar.gz \
+RUN wget ftp://ftp.atnf.csiro.au/pub/software/rpfits/rpfits.tar.gz \
+    && tar zxvf rpfits.tar.gz \
     && cd rpfits/linux64 \
     && make install \
     && cd ../.. \
     && rm -rf rpfits*
 
 # Dependencies - LIBSAKURA
-RUN git clone https://github.com/CARTAvis/libsakura \
+RUN git clone https://github.com/aardk/libsakura \
     && cd libsakura \
     && wget https://github.com/google/googletest/archive/release-1.7.0.tar.gz \
     && tar zxvf release-1.7.0.tar.gz \
     && ln -s googletest-release-1.7.0 gtest \
     && mkdir build \
     && cd build \
-    && cmake .. \
+    # Local compiles:
+    # cmake -DSIMD_ARCH=NATIVE ..
+    # For distribution purposes:
+    && cmake -DSIMD_ARCH=SSE4 .. \
     && make \
     && make apidoc \
     && make install \
@@ -61,15 +64,19 @@ RUN git clone https://github.com/CARTAvis/libsakura \
     && rm -rf libsakura
 
 # casa data needs git lfs support
-RUN wget https://github.com/git-lfs/git-lfs/releases/download/v2.3.4/git-lfs-linux-amd64-2.3.4.tar.gz \
-    && tar zxvf git-lfs-linux-amd64-2.3.4.tar.gz \
-    && git-lfs-2.3.4/install.sh \
-    && rm -rf git-lfs-2.3.4 git-lfs-linux-amd64-2.3.4.tar.gz
+ENV LFSVERSION=v2.6.1
+RUN mkdir -p gitlfs-${LFSVERSION} \
+    && cd gitlfs-${LFSVERSION} \
+    && wget https://github.com/git-lfs/git-lfs/releases/download/${LFSVERSION}/git-lfs-linux-amd64-${LFSVERSION}.tar.gz \
+    && tar zxvf git-lfs-linux-amd64-${LFSVERSION}.tar.gz \
+    && ./install.sh \
+    && cd .. \
+    && rm -rf gitlfs-${LFSVERSION}
 
 ENV HOST_CPU_CORES=8 \
     CASA_BUILD_TYPE=Release \
     CASA_ARCH=linux64 \
-    CASA_BRANCH=release/5.4.0 \
+    CASA_BRANCH=release/5.5.0 \
     workDir=/usr/local/casa \
     CASAPATH="$workDir $CASA_ARCH"
 
@@ -99,15 +106,6 @@ RUN git clone -b $CASA_BRANCH https://open-bitbucket.nrao.edu/scm/casa/casa.git 
     # build casa code
     && mkdir $workDir/code/build \
     && cd $workDir/code/build \
-    && mkdir gtest breakpad \
-    && cd gtest \
-    # For some reason automatic download of googletest and breakpad fails on my system
-    && wget https://svn.cv.nrao.edu/casa/devel/googletest/googletest-release-1.7.0.tar.gz \
-    && tar zxvf googletest-release-1.7.0.tar.gz \
-    && cd ../breakpad \
-    && wget https://casa.nrao.edu/download/devel/breakpad/breakpad-from-google-180213-patch2.tgz \
-    && tar zxvf breakpad-from-google-180213-patch2.tgz \
-    && cd .. \
     && cmake .. -DCMAKE_BUILD_TYPE=$CASA_BUILD_TYPE -DINTERACTIVE_ITERATION=1 -DCMAKE_INSTALL_PREFIX=$workDir/$CASA_ARCH \
     && make -j$HOST_CPU_CORES \
     && cd $workDir \
